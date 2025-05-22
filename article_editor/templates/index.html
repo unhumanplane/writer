@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent Article Editor</title>
+    <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Intelligent Article Editor</h1>
+    <div>
+        <h2>Original Text</h2>
+        <div id="quillEditor" style="height: 250px;"></div>
+    </div>
+    <div>
+        <label for="llmServiceSelect">Choose LLM Service:</label>
+        <select id="llmServiceSelect">
+            <option value="mock" selected>Mock LLM</option>
+            <option value="openai">OpenAI LLM</option>
+            <!-- Add more options here if other services are implemented -->
+        </select>
+    </div>
+    <div>
+        <button id="editButton">Edit with LLM</button>
+    </div>
+    <div>
+        <h2>Edited Text</h2>
+        <div id="editedTextContainer" style="border: 1px solid #ccc; min-height: 200px; padding: 10px;">
+            <!-- Edited text will appear here -->
+        </div>
+    </div>
+    <div>
+        <h2>Comparison (Diff)</h2>
+        <div id="diffContainer" style="border: 1px solid #ccc; padding: 10px; overflow-x: auto;">
+            <!-- HTML diff will appear here -->
+        </div>
+    </div>
+    <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <script>
+        var quill = new Quill('#quillEditor', {
+            theme: 'snow',
+            modules: {
+                toolbar: [
+                    [{ 'header': [1, 2, 3, false] }],
+                    ['bold', 'italic', 'underline'],
+                    [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                    ['clean']
+                ]
+            }
+        });
+
+        document.getElementById('editButton').addEventListener('click', function() {
+            // Get HTML content from Quill editor
+            const originalInputValue = quill.root.innerHTML; 
+            const editedTextContainer = document.getElementById('editedTextContainer');
+            const diffContainer = document.getElementById('diffContainer'); // Get diff container
+            
+            editedTextContainer.innerHTML = 'Editing in progress...'; // Provide feedback
+            diffContainer.innerHTML = 'Processing...'; // Also indicate processing in diff area
+
+            // Get the selected LLM service from the dropdown
+            const llmServiceSelect = document.getElementById('llmServiceSelect');
+            const selectedService = llmServiceSelect.value;
+
+            const apiUrl = `/edit?service=${selectedService}`; // Construct API URL with selected service
+
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                // Send the HTML content
+                body: JSON.stringify({ text: originalInputValue }) 
+            })
+            .then(response => {
+                if (!response.ok) {
+                     // Try to get error message from body if server provides one
+                    return response.json().then(errData => {
+                        throw new Error(errData.error || 'Network response was not ok: ' + response.statusText);
+                    }).catch(() => {
+                        // Fallback if body is not JSON or no error field
+                        throw new Error('Network response was not ok: ' + response.statusText);
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    console.error('Error from server:', data.error);
+                    editedTextContainer.innerHTML = 'Error: ' + data.error; // Use innerHTML
+                    const diffContainer = document.getElementById('diffContainer');
+                    diffContainer.innerHTML = 'Error loading diff: ' + data.error;
+                } else {
+                    // Update Quill editor with the original_text from response
+                    quill.root.innerHTML = data.original_text; 
+                    
+                    // Display edited text (which might be HTML)
+                    editedTextContainer.innerHTML = data.edited_text; 
+
+                    const diffContainer = document.getElementById('diffContainer');
+                    if (data.html_diff) {
+                        diffContainer.innerHTML = data.html_diff;
+                    } else {
+                        diffContainer.innerHTML = 'No diff information available.';
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                editedTextContainer.innerHTML = 'Failed to connect to the editor service. ' + error.message; // Use innerHTML
+                const diffContainer = document.getElementById('diffContainer');
+                diffContainer.innerHTML = 'Failed to load diff due to connection error: ' + error.message;
+            });
+        });
+    </script>
+</body>
+</html>
